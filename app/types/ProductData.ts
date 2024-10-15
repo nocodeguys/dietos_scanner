@@ -1,6 +1,5 @@
 export interface ProductData {
     name: string;
-    product_name?: string; // Add this line
     price: number | null;
     ingredients: string[];
     macronutrients: {

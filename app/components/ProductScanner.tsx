@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
-import { scanImage } from '../utils/imageProcessing'
+import { scanImage, checkScanStatus, ScanStatusResponse } from '../utils/imageProcessing'
 import { ProductData } from '../types/ProductData'
 
 export default function ProductScanner() {
@@ -9,6 +9,7 @@ export default function ProductScanner() {
   const [result, setResult] = useState<ProductData | null>(null)
   const [savedToDatabase, setSavedToDatabase] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [scanId, setScanId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -17,19 +18,35 @@ export default function ProductScanner() {
       setScanning(true)
       setError(null)
       setSavedToDatabase(false)
+      setResult(null)
       try {
-        const response = await scanImage(file)
-        setResult(response.scannedData)
-        setSavedToDatabase(!!response.savedData)
-        if (response.dbError) {
-          console.warn('Database error:', response.dbError)
-        }
+        const { scanId } = await scanImage(file)
+        setScanId(scanId)
+        await pollScanStatus(scanId)
       } catch (error) {
-        console.error('Error scanning image:', error)
-        setError('Failed to scan the image. Please try again.')
-        setResult(null)
+        console.error('Error initiating scan:', error)
+        setError('Failed to initiate scan. Please try again.')
       }
       setScanning(false)
+    }
+  }
+
+  const pollScanStatus = async (id: string) => {
+    try {
+      const response: ScanStatusResponse = await checkScanStatus(id)
+      if (response.status === 'completed') {
+        setResult(response.scannedData || null)
+        setSavedToDatabase(!!response.savedData)
+        setScanId(null)
+      } else if (response.status === 'processing') {
+        setTimeout(() => pollScanStatus(id), 5000) // Poll every 5 seconds
+      } else {
+        throw new Error(response.error || 'Scan failed')
+      }
+    } catch (error) {
+      console.error('Error checking scan status:', error)
+      setError('Failed to retrieve scan results. Please try again.')
+      setScanId(null)
     }
   }
 
@@ -46,13 +63,18 @@ export default function ProductScanner() {
       <button
         onClick={() => fileInputRef.current?.click()}
         className="w-full bg-blue-500 text-white py-2 px-4 rounded disabled:bg-blue-300"
-        disabled={scanning}
+        disabled={scanning || !!scanId}
       >
-        {scanning ? 'Scanning...' : 'Scan Product'}
+        {scanning ? 'Initiating Scan...' : scanId ? 'Processing...' : 'Scan Product'}
       </button>
       {error && (
         <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
           <strong>Error:</strong> {error}
+        </div>
+      )}
+      {scanId && (
+        <div className="mt-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
+          Scan in progress. This may take a few moments...
         </div>
       )}
       {result && (

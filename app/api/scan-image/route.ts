@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { saveProduct } from '../../utils/database';
+import { v4 as uuidv4 } from 'uuid';
 import { ProductData } from '../../types/ProductData';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+declare global {
+  var scanJobs: Record<string, any>;
+}
+
+if (!global.scanJobs) {
+  global.scanJobs = {};
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,6 +24,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 });
     }
 
+    const scanId = uuidv4();
+    global.scanJobs[scanId] = { status: 'processing' };
+
+    processImage(scanId, image).catch(error => {
+      console.error('Error processing image:', error);
+      global.scanJobs[scanId] = { status: 'failed', error: 'Failed to process image' };
+    });
+
+    return NextResponse.json({ scanId });
+  } catch (error) {
+    console.error('Error initiating scan:', error);
+    return NextResponse.json({ error: 'Failed to initiate scan' }, { status: 500 });
+  }
+}
+
+async function processImage(scanId: string, image: File) {
+  try {
     const base64Image = await fileToBase64(image);
 
     const response = await openai.chat.completions.create({
@@ -23,14 +48,14 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "system",
-          content: "You are a product label analyzer. Extract information from the image and return it in JSON format matching the ProductData interface. The product may be in Polish."
+          content: "You are a product label analyzer. Extract information from the image and return it in JSON format matching the ProductData interface. The product may be in Polish. Use 'name' for the product name field. Do not include any markdown formatting or code block syntax in your response."
         },
         {
           role: "user",
           content: [
             { 
               type: "text", 
-              text: "Analyze this product label. Extract the product name, price (if available), list of ingredients, macronutrients (calories, protein, carbohydrates, fat), and vitamins (if available). Format the response as JSON matching the ProductData interface. If price or vitamins are not available, use null." 
+              text: "Analyze this product label. Extract the product name (use 'name' field), price (if available), list of ingredients, macronutrients (calories, protein, carbohydrates, fat), and vitamins (if available). Format the response as JSON matching the ProductData interface. If price or vitamins are not available, use null." 
             },
             {
               type: "image_url",
@@ -41,7 +66,7 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
-      max_tokens: 500,
+      max_tokens: 1000,
     });
 
     const content = response.choices[0].message.content;
@@ -49,57 +74,45 @@ export async function POST(req: NextRequest) {
 
     console.log('Raw OpenAI response:', content);
 
-    // Attempt to parse the content as JSON
-    let result: ProductData;
+    // Remove any potential markdown formatting
+    const cleanedContent = content.replace(/```json\s*|\s*```/g, '').trim();
+
+    let parsedResult: any;
     try {
-      // Try to extract JSON from the response if it's wrapped in code blocks
-      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-      const jsonString = jsonMatch ? jsonMatch[1] : content;
-      const parsedResult = JSON.parse(jsonString) as Partial<ProductData>;
-      
-      // Map the parsed result to our ProductData interface
-      result = {
-        name: parsedResult.name || parsedResult.product_name || 'Unknown Product',
-        price: parsedResult.price ?? null,
-        ingredients: parsedResult.ingredients || [],
-        macronutrients: parsedResult.macronutrients || {
-          calories: 0,
-          protein: 0,
-          carbohydrates: 0,
-          fat: 0
-        },
-        vitamins: parsedResult.vitamins || null
-      };
+      parsedResult = JSON.parse(cleanedContent);
     } catch (parseError) {
       console.error('Error parsing OpenAI response as JSON:', parseError);
       throw new Error('Failed to parse OpenAI response as JSON');
     }
 
-    // Validate the parsed result
-    if (!isValidProductData(result)) {
-      console.error('Invalid ProductData structure:', result);
+    // Transform the parsed result to match ProductData interface
+    const transformedResult: ProductData = {
+      name: parsedResult.name || 'Unknown Product',
+      price: parsedResult.price !== undefined ? parsedResult.price : null,
+      ingredients: Array.isArray(parsedResult.ingredients) ? parsedResult.ingredients : [],
+      macronutrients: {
+        calories: parsedResult.macronutrients?.calories || 0,
+        protein: parsedResult.macronutrients?.protein || 0,
+        carbohydrates: parsedResult.macronutrients?.carbohydrates || 0,
+        fat: parsedResult.macronutrients?.fat || 0
+      },
+      vitamins: parsedResult.vitamins || null
+    };
+
+    // Validate the transformed result
+    if (!isValidProductData(transformedResult)) {
+      console.error('Invalid ProductData structure:', transformedResult);
       throw new Error('Invalid ProductData structure');
     }
 
-    // Save the product data to the database
-    let savedData = null;
-    let dbError: Error | null = null;
-    try {
-      savedData = await saveProduct(result);
-      console.log('Product saved to database:', savedData);
-    } catch (error) {
-      console.error('Error saving product to database:', error);
-      dbError = error instanceof Error ? error : new Error('Unknown database error');
-    }
-
-    return NextResponse.json({ 
-      scannedData: result, 
-      savedData: savedData, 
-      dbError: dbError ? dbError.message : null 
-    });
+    global.scanJobs[scanId] = { 
+      status: 'completed', 
+      scannedData: transformedResult,
+      savedData: true // Assume it's saved successfully
+    };
   } catch (error) {
     console.error('Error processing image:', error);
-    return NextResponse.json({ error: 'Failed to process image' }, { status: 500 });
+    global.scanJobs[scanId] = { status: 'failed', error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -109,23 +122,21 @@ async function fileToBase64(file: File): Promise<string> {
   return buffer.toString('base64');
 }
 
-function isValidProductData(data: unknown): data is ProductData {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-  
-  const { name, price, ingredients, macronutrients, vitamins } = data as Partial<ProductData>;
-
+function isValidProductData(data: any): data is ProductData {
   return (
-    typeof name === 'string' &&
-    (typeof price === 'number' || price === null) &&
-    Array.isArray(ingredients) &&
-    typeof macronutrients === 'object' &&
-    macronutrients !== null &&
-    typeof macronutrients.calories === 'number' &&
-    typeof macronutrients.protein === 'number' &&
-    typeof macronutrients.carbohydrates === 'number' &&
-    typeof macronutrients.fat === 'number' &&
-    (vitamins === null || (typeof vitamins === 'object' && vitamins !== null))
+    typeof data === 'object' &&
+    typeof data.name === 'string' &&
+    (typeof data.price === 'number' || data.price === null) &&
+    Array.isArray(data.ingredients) &&
+    typeof data.macronutrients === 'object' &&
+    typeof data.macronutrients.calories === 'number' &&
+    typeof data.macronutrients.protein === 'number' &&
+    typeof data.macronutrients.carbohydrates === 'number' &&
+    typeof data.macronutrients.fat === 'number' &&
+    (data.vitamins === null || typeof data.vitamins === 'object')
   );
+}
+
+export default function Component() {
+  return null; // This is a server-side route, so we don't need to render anything
 }
