@@ -1,8 +1,15 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
-import { scanImage, checkScanStatus, ScanStatusResponse } from '../utils/imageProcessing'
+import { scanImage, checkScanStatus } from '../utils/imageProcessing'
 import { ProductData } from '../types/ProductData'
+
+interface ScanStatusResponse {
+  status: 'processing' | 'completed' | 'failed';
+  scannedData?: ProductData;
+  savedData?: boolean;
+  error?: string;
+}
 
 export default function ProductScanner() {
   const [scanning, setScanning] = useState(false)
@@ -33,9 +40,9 @@ export default function ProductScanner() {
 
   const pollScanStatus = async (id: string) => {
     try {
-      const response = await checkScanStatus(id)
-      if (response.status === 'completed') {
-        setResult(response.scannedData!)
+      const response: ScanStatusResponse = await checkScanStatus(id)
+      if (response.status === 'completed' && response.scannedData) {
+        setResult(response.scannedData)
         setSavedToDatabase(!!response.savedData)
         setScanId(null)
       } else if (response.status === 'processing') {

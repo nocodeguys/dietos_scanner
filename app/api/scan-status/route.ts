@@ -1,41 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ProductData } from '../../types/ProductData';
 
+interface ScanJob {
+  status: 'processing' | 'completed' | 'failed';
+  scannedData?: ProductData;
+  savedData?: boolean;
+  error?: string;
+}
+
 declare global {
-  var scanJobs: Record<string, any>;
+  // eslint-disable-next-line no-var
+  var scanJobs: Record<string, ScanJob>;
+}
+
+if (typeof global.scanJobs === 'undefined') {
+  global.scanJobs = {};
 }
 
 export async function GET(req: NextRequest) {
-  const searchParams = req.nextUrl.searchParams;
-  const scanId = searchParams.get('scanId');
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get('id');
 
-  if (!scanId) {
-    return NextResponse.json({ error: 'No scanId provided' }, { status: 400 });
+  if (!id) {
+    return NextResponse.json({ error: 'No scan ID provided' }, { status: 400 });
   }
 
-  const scanJob = global.scanJobs[scanId];
+  const scanJob = global.scanJobs[id];
 
   if (!scanJob) {
     return NextResponse.json({ error: 'Scan job not found' }, { status: 404 });
   }
 
-  if (scanJob.status === 'completed') {
-    const response: ScanStatusResponse = {
-      status: 'completed',
-      scannedData: scanJob.scannedData as ProductData,
-      savedData: scanJob.savedData
-    };
-    return NextResponse.json(response);
-  } else if (scanJob.status === 'processing') {
-    return NextResponse.json({ status: 'processing' });
-  } else {
-    return NextResponse.json({ status: 'failed', error: scanJob.error }, { status: 500 });
-  }
+  return NextResponse.json(scanJob);
 }
 
-interface ScanStatusResponse {
-  status: 'completed' | 'processing' | 'failed';
-  scannedData?: ProductData;
-  savedData?: boolean;
-  error?: string;
+export default function Component() {
+  return null; // This is a server-side route, so we don't need to render anything
 }
