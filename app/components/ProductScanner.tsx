@@ -3,6 +3,12 @@
 import React, { useState, useRef } from 'react'
 import { scanImage, checkScanStatus } from '../utils/imageProcessing'
 import { ProductData } from '../types/ProductData'
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Camera, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 
 interface ScanStatusResponse {
   status: 'processing' | 'completed' | 'failed';
@@ -17,6 +23,7 @@ export default function ProductScanner() {
   const [savedToDatabase, setSavedToDatabase] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [scanId, setScanId] = useState<string | null>(null)
+  const [progress, setProgress] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,6 +33,7 @@ export default function ProductScanner() {
       setError(null)
       setSavedToDatabase(false)
       setResult(null)
+      setProgress(0)
       try {
         const { scanId } = await scanImage(file)
         setScanId(scanId)
@@ -45,7 +53,9 @@ export default function ProductScanner() {
         setResult(response.scannedData)
         setSavedToDatabase(!!response.savedData)
         setScanId(null)
+        setProgress(100)
       } else if (response.status === 'processing') {
+        setProgress((prev) => Math.min(prev + 10, 90))
         setTimeout(() => pollScanStatus(id), 5000) // Poll every 5 seconds
       } else {
         throw new Error(response.error || 'Scan failed')
@@ -58,66 +68,99 @@ export default function ProductScanner() {
   }
 
   return (
-    <div className="w-full max-w-md">
-      <input
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handleCapture}
-        ref={fileInputRef}
-        className="hidden"
-      />
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="w-full bg-blue-500 text-white py-2 px-4 rounded disabled:bg-blue-300"
-        disabled={scanning || !!scanId}
-      >
-        {scanning ? 'Initiating Scan...' : scanId ? 'Processing...' : 'Scan Product'}
-      </button>
-      {error && (
-        <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
-      {scanId && (
-        <div className="mt-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
-          Scan in progress. This may take a few moments...
-        </div>
-      )}
-      {result && (
-        <div className="mt-4">
-          <h2 className="text-xl font-bold">Scanned Result:</h2>
-          <div className="bg-gray-100 p-4 rounded mt-2">
-            <p><strong>Name:</strong> {result.name}</p>
-            <p><strong>Price:</strong> {result.price !== null ? `$${result.price.toFixed(2)}` : 'Not available'}</p>
-            <p><strong>Ingredients:</strong> {result.ingredients.length > 0 ? result.ingredients.join(', ') : 'Not available'}</p>
-            <p><strong>Macronutrients:</strong></p>
-            <ul className="list-disc list-inside pl-4">
-              <li>Calories: {result.macronutrients.calories}</li>
-              <li>Protein: {result.macronutrients.protein}g</li>
-              <li>Carbohydrates: {result.macronutrients.carbohydrates}g</li>
-              <li>Fat: {result.macronutrients.fat}g</li>
-            </ul>
-            {result.vitamins && Object.keys(result.vitamins).length > 0 ? (
+    <Card className="w-full max-w-[95%] md:max-w-2xl mx-auto">
+      <CardHeader>
+        <CardTitle>Product Scanner</CardTitle>
+        <CardDescription>Scan a product label to get detailed information</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleCapture}
+          ref={fileInputRef}
+          className="hidden"
+        />
+        <Button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full"
+          disabled={scanning || !!scanId}
+        >
+          {scanning ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Initiating Scan...
+            </>
+          ) : scanId ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            <>
+              <Camera className="mr-2 h-4 w-4" />
+              Scan Product
+            </>
+          )}
+        </Button>
+        {error && (
+          <div className="p-4 bg-destructive/15 text-destructive rounded-md">
+            <AlertCircle className="inline-block mr-2 h-4 w-4" />
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+        {scanId && (
+          <div className="space-y-2">
+            <div className="text-sm text-muted-foreground">
+              Scan in progress. This may take a few moments...
+            </div>
+            <Progress value={progress} className="w-full" />
+          </div>
+        )}
+        {result && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">{result.name}</h3>
+              {result.price !== null && <Badge variant="secondary">${result.price.toFixed(2)}</Badge>}
+            </div>
+            <Separator />
+            <div>
+              <h4 className="font-semibold mb-2">Ingredients</h4>
+              <p className="text-sm text-muted-foreground">{result.ingredients.join(", ")}</p>
+            </div>
+            <Separator />
+            <div>
+              <h4 className="font-semibold mb-2">Macronutrients</h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <p>Calories: {result.macronutrients.calories}</p>
+                <p>Protein: {result.macronutrients.protein}g</p>
+                <p>Carbohydrates: {result.macronutrients.carbohydrates}g</p>
+                <p>Fat: {result.macronutrients.fat}g</p>
+              </div>
+            </div>
+            {result.vitamins && Object.keys(result.vitamins).length > 0 && (
               <>
-                <p><strong>Vitamins:</strong></p>
-                <ul className="list-disc list-inside pl-4">
-                  {Object.entries(result.vitamins).map(([vitamin, amount]) => (
-                    <li key={vitamin}>{vitamin}: {amount}</li>
-                  ))}
-                </ul>
+                <Separator />
+                <div>
+                  <h4 className="font-semibold mb-2">Vitamins & Minerals</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {Object.entries(result.vitamins).map(([vitamin, amount]) => (
+                      <p key={vitamin}>{vitamin}: {amount}</p>
+                    ))}
+                  </div>
+                </div>
               </>
-            ) : (
-              <p><strong>Vitamins:</strong> Not available</p>
             )}
           </div>
-          {savedToDatabase && (
-            <div className="mt-2 p-2 bg-green-100 text-green-700 rounded">
-              Product successfully saved to database.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+        )}
+        {savedToDatabase && (
+          <div className="p-2 bg-green-100 text-green-700 rounded-md">
+            <CheckCircle className="inline-block mr-2 h-4 w-4" />
+            Product successfully saved to database.
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
