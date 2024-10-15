@@ -33,7 +33,3 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(scanJob);
 }
-
-export default function Component() {
-  return null; // This is a server-side route, so we don't need to render anything
-}

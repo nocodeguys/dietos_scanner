@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import { ProductData } from '../../types/ProductData';
+import { saveProduct } from '../../utils/database';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -113,11 +114,24 @@ async function processImage(scanId: string, image: File) {
       throw new Error('Invalid ProductData structure');
     }
 
-    global.scanJobs[scanId] = { 
-      status: 'completed', 
-      scannedData: transformedResult,
-      savedData: true // Assume it's saved successfully
-    };
+    // Save the product data to the database
+    try {
+      const savedData = await saveProduct(transformedResult);
+      global.scanJobs[scanId] = { 
+        status: 'completed', 
+        scannedData: transformedResult,
+        savedData: true
+      };
+      console.log('Product saved to database:', savedData);
+    } catch (dbError) {
+      console.error('Error saving product to database:', dbError);
+      global.scanJobs[scanId] = { 
+        status: 'completed', 
+        scannedData: transformedResult,
+        savedData: false,
+        error: 'Failed to save product to database'
+      };
+    }
   } catch (error) {
     console.error('Error processing image:', error);
     global.scanJobs[scanId] = { status: 'failed', error: error instanceof Error ? error.message : 'Unknown error' };
@@ -148,8 +162,4 @@ function isValidProductData(data: unknown): data is ProductData {
     typeof productData.macronutrients?.fat === 'number' &&
     (productData.vitamins === null || typeof productData.vitamins === 'object')
   );
-}
-
-export default function Component() {
-  return null; // This is a server-side route, so we don't need to render anything
 }
