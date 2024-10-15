@@ -1,23 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { saveProduct } from '../../utils/database';
+import { ProductData } from '../../types/ProductData';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-export interface ProductData {
-  name: string;
-  price: number | null;
-  ingredients: string[];
-  macronutrients: {
-    calories: number;
-    protein: number;
-    carbohydrates: number;
-    fat: number;
-  };
-  vitamins: Record<string, number> | null;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -67,12 +55,12 @@ export async function POST(req: NextRequest) {
       // Try to extract JSON from the response if it's wrapped in code blocks
       const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
       const jsonString = jsonMatch ? jsonMatch[1] : content;
-      const parsedResult = JSON.parse(jsonString);
+      const parsedResult = JSON.parse(jsonString) as Partial<ProductData>;
       
       // Map the parsed result to our ProductData interface
       result = {
-        name: parsedResult.product_name || parsedResult.name || 'Unknown Product',
-        price: parsedResult.price,
+        name: parsedResult.name || parsedResult.product_name || 'Unknown Product',
+        price: parsedResult.price ?? null,
         ingredients: parsedResult.ingredients || [],
         macronutrients: parsedResult.macronutrients || {
           calories: 0,
@@ -80,7 +68,7 @@ export async function POST(req: NextRequest) {
           carbohydrates: 0,
           fat: 0
         },
-        vitamins: parsedResult.vitamins
+        vitamins: parsedResult.vitamins || null
       };
     } catch (parseError) {
       console.error('Error parsing OpenAI response as JSON:', parseError);
@@ -95,20 +83,19 @@ export async function POST(req: NextRequest) {
 
     // Save the product data to the database
     let savedData = null;
-    let dbError = null;
+    let dbError: Error | null = null;
     try {
       savedData = await saveProduct(result);
       console.log('Product saved to database:', savedData);
     } catch (error) {
       console.error('Error saving product to database:', error);
-      dbError = error;
-      // We'll continue and return the scanned data to the client, even if saving to the database fails
+      dbError = error instanceof Error ? error : new Error('Unknown database error');
     }
 
     return NextResponse.json({ 
       scannedData: result, 
       savedData: savedData, 
-      dbError: dbError ? (dbError as Error).message : null 
+      dbError: dbError ? dbError.message : null 
     });
   } catch (error) {
     console.error('Error processing image:', error);
@@ -122,17 +109,23 @@ async function fileToBase64(file: File): Promise<string> {
   return buffer.toString('base64');
 }
 
-function isValidProductData(data: any): data is ProductData {
+function isValidProductData(data: unknown): data is ProductData {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+  
+  const { name, price, ingredients, macronutrients, vitamins } = data as Partial<ProductData>;
+
   return (
-    typeof data === 'object' &&
-    typeof data.name === 'string' &&
-    (typeof data.price === 'number' || data.price === null) &&
-    Array.isArray(data.ingredients) &&
-    typeof data.macronutrients === 'object' &&
-    typeof data.macronutrients.calories === 'number' &&
-    typeof data.macronutrients.protein === 'number' &&
-    typeof data.macronutrients.carbohydrates === 'number' &&
-    typeof data.macronutrients.fat === 'number' &&
-    (typeof data.vitamins === 'object' || data.vitamins === null)
+    typeof name === 'string' &&
+    (typeof price === 'number' || price === null) &&
+    Array.isArray(ingredients) &&
+    typeof macronutrients === 'object' &&
+    macronutrients !== null &&
+    typeof macronutrients.calories === 'number' &&
+    typeof macronutrients.protein === 'number' &&
+    typeof macronutrients.carbohydrates === 'number' &&
+    typeof macronutrients.fat === 'number' &&
+    (vitamins === null || (typeof vitamins === 'object' && vitamins !== null))
   );
 }

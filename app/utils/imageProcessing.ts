@@ -1,8 +1,8 @@
-import { ProductData } from '@/app/types/ProductData';
+import { ProductData } from '../types/ProductData';
 
 interface ScanImageResponse {
   scannedData: ProductData;
-  savedData: any;
+  savedData: unknown;
   dbError: string | null;
 }
 
