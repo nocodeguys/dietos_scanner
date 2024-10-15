@@ -7,11 +7,19 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-declare global {
-  var scanJobs: Record<string, any>;
+interface ScanJob {
+  status: 'processing' | 'completed' | 'failed';
+  scannedData?: ProductData;
+  savedData?: boolean;
+  error?: string;
 }
 
-if (!global.scanJobs) {
+declare global {
+  // eslint-disable-next-line no-var
+  var scanJobs: Record<string, ScanJob>;
+}
+
+if (typeof global.scanJobs === 'undefined') {
   global.scanJobs = {};
 }
 
@@ -77,7 +85,7 @@ async function processImage(scanId: string, image: File) {
     // Remove any potential markdown formatting
     const cleanedContent = content.replace(/```json\s*|\s*```/g, '').trim();
 
-    let parsedResult: any;
+    let parsedResult: Partial<ProductData>;
     try {
       parsedResult = JSON.parse(cleanedContent);
     } catch (parseError) {
@@ -122,18 +130,23 @@ async function fileToBase64(file: File): Promise<string> {
   return buffer.toString('base64');
 }
 
-function isValidProductData(data: any): data is ProductData {
+function isValidProductData(data: unknown): data is ProductData {
+  if (typeof data !== 'object' || data === null) {
+    return false;
+  }
+  
+  const productData = data as Partial<ProductData>;
+  
   return (
-    typeof data === 'object' &&
-    typeof data.name === 'string' &&
-    (typeof data.price === 'number' || data.price === null) &&
-    Array.isArray(data.ingredients) &&
-    typeof data.macronutrients === 'object' &&
-    typeof data.macronutrients.calories === 'number' &&
-    typeof data.macronutrients.protein === 'number' &&
-    typeof data.macronutrients.carbohydrates === 'number' &&
-    typeof data.macronutrients.fat === 'number' &&
-    (data.vitamins === null || typeof data.vitamins === 'object')
+    typeof productData.name === 'string' &&
+    (typeof productData.price === 'number' || productData.price === null) &&
+    Array.isArray(productData.ingredients) &&
+    typeof productData.macronutrients === 'object' &&
+    typeof productData.macronutrients?.calories === 'number' &&
+    typeof productData.macronutrients?.protein === 'number' &&
+    typeof productData.macronutrients?.carbohydrates === 'number' &&
+    typeof productData.macronutrients?.fat === 'number' &&
+    (productData.vitamins === null || typeof productData.vitamins === 'object')
   );
 }
 

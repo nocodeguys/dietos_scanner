@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ProductData } from '../../types/ProductData';
 
-// This should be replaced with a proper database or caching solution
-declare global {
-  var scanJobs: Record<string, any>;
+interface ScanJob {
+  status: 'processing' | 'completed' | 'failed';
+  scannedData?: ProductData;
+  savedData?: boolean;
+  error?: string;
 }
 
-if (!global.scanJobs) {
+declare global {
+  // eslint-disable-next-line no-var
+  var scanJobs: Record<string, ScanJob>;
+}
+
+if (typeof global.scanJobs === 'undefined') {
   global.scanJobs = {};
 }
 
@@ -24,4 +32,8 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json(scanJob);
+}
+
+export default function Component() {
+  return null; // This is a server-side route, so we don't need to render anything
 }
