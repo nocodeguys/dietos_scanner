@@ -1,17 +1,6 @@
 import { ProductData } from '../types/ProductData';
 
-export interface ScanInitResponse {
-  scanId: string;
-}
-
-export interface ScanStatusResponse {
-  status: 'processing' | 'completed' | 'failed';
-  scannedData?: ProductData;
-  savedData?: unknown;
-  error?: string;
-}
-
-export async function scanImage(file: File): Promise<ScanInitResponse> {
+export async function scanImage(file: File): Promise<{ scanId: string }> {
   const formData = new FormData();
   formData.append('image', file);
 
@@ -24,15 +13,22 @@ export async function scanImage(file: File): Promise<ScanInitResponse> {
     throw new Error('Failed to initiate scan');
   }
 
-  return await response.json();
+  return response.json();
+}
+
+export interface ScanStatusResponse {
+  status: 'completed' | 'processing' | 'failed';
+  scannedData?: ProductData;
+  savedData?: boolean;
+  error?: string;
 }
 
 export async function checkScanStatus(scanId: string): Promise<ScanStatusResponse> {
-  const response = await fetch(`/api/scan-status?id=${scanId}`);
+  const response = await fetch(`/api/scan-status?scanId=${scanId}`);
 
   if (!response.ok) {
     throw new Error('Failed to check scan status');
   }
 
-  return await response.json();
+  return response.json();
 }

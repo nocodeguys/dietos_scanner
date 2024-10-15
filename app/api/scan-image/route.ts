@@ -7,19 +7,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-interface ScanJob {
-  status: 'processing' | 'completed' | 'failed';
-  scannedData?: ProductData;
-  savedData?: boolean;
-  error?: string;
-}
-
 declare global {
-  // eslint-disable-next-line no-var
-  var scanJobs: Record<string, ScanJob>;
+  var scanJobs: Record<string, any>;
 }
 
-if (typeof global.scanJobs === 'undefined') {
+if (!global.scanJobs) {
   global.scanJobs = {};
 }
 
@@ -85,7 +77,7 @@ async function processImage(scanId: string, image: File) {
     // Remove any potential markdown formatting
     const cleanedContent = content.replace(/```json\s*|\s*```/g, '').trim();
 
-    let parsedResult: Partial<ProductData>;
+    let parsedResult: any;
     try {
       parsedResult = JSON.parse(cleanedContent);
     } catch (parseError) {
@@ -130,26 +122,17 @@ async function fileToBase64(file: File): Promise<string> {
   return buffer.toString('base64');
 }
 
-function isValidProductData(data: unknown): data is ProductData {
-  if (typeof data !== 'object' || data === null) {
-    return false;
-  }
-  
-  const productData = data as Partial<ProductData>;
-  
+function isValidProductData(data: any): data is ProductData {
   return (
-    typeof productData.name === 'string' &&
-    (typeof productData.price === 'number' || productData.price === null) &&
-    Array.isArray(productData.ingredients) &&
-    typeof productData.macronutrients === 'object' &&
-    typeof productData.macronutrients?.calories === 'number' &&
-    typeof productData.macronutrients?.protein === 'number' &&
-    typeof productData.macronutrients?.carbohydrates === 'number' &&
-    typeof productData.macronutrients?.fat === 'number' &&
-    (productData.vitamins === null || typeof productData.vitamins === 'object')
+    typeof data === 'object' &&
+    typeof data.name === 'string' &&
+    (typeof data.price === 'number' || data.price === null) &&
+    Array.isArray(data.ingredients) &&
+    typeof data.macronutrients === 'object' &&
+    typeof data.macronutrients.calories === 'number' &&
+    typeof data.macronutrients.protein === 'number' &&
+    typeof data.macronutrients.carbohydrates === 'number' &&
+    typeof data.macronutrients.fat === 'number' &&
+    (data.vitamins === null || typeof data.vitamins === 'object')
   );
-}
-
-export default function Component() {
-  return null; // This is a server-side route, so we don't need to render anything
 }

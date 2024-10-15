@@ -33,9 +33,9 @@ export default function ProductScanner() {
 
   const pollScanStatus = async (id: string) => {
     try {
-      const response: ScanStatusResponse = await checkScanStatus(id)
+      const response = await checkScanStatus(id)
       if (response.status === 'completed') {
-        setResult(response.scannedData || null)
+        setResult(response.scannedData!)
         setSavedToDatabase(!!response.savedData)
         setScanId(null)
       } else if (response.status === 'processing') {
